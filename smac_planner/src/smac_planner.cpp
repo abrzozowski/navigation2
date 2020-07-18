@@ -95,6 +95,8 @@ void SmacPlanner::configure(
   _name = name;
   _global_frame = costmap_ros->getGlobalFrameID();
 
+  _ompl_planner.configure(parent, _costmap, costmap_ros->getRobotFootprint());
+
   bool allow_unknown;
   int max_iterations;
   int max_on_approach_iterations;
@@ -269,98 +271,100 @@ nav_msgs::msg::Path SmacPlanner::createPlan(
   pose.pose.orientation.z = 0.0;
   pose.pose.orientation.w = 1.0;
 
+  plan = _ompl_planner.run(start, goal);
+
   // Compute plan
-  IndexPath path;
-  int num_iterations = 0;
-  std::string error;
-  try {
-    if (!_a_star->createPath(
-      path, num_iterations, _tolerance / static_cast<float>(_costmap->getResolution())))
-    {
-      if (num_iterations < _a_star->getMaxIterations()) {
-        error = std::string("no valid path found.");
-      } else {
-        error = std::string("exceeded maximum iterations.");
-      }
-    }
-  } catch (const std::runtime_error & e) {
-    error = "invalid use: ";
-    error += e.what();
-  }
-
-  if (!error.empty()) {
-    RCLCPP_WARN(
-      _node->get_logger(),
-      "%s: failed to create plan, %s.",
-      _name.c_str(), error.c_str());
-    return plan;
-  }
-
-  // Convert to world coordinates and downsample path for smoothing if necesssary
-  // We're going to downsample by 4x to give terms room to move.
-  const int downsample_ratio = 4;
-  std::vector<Eigen::Vector2d> path_world;
-  path_world.reserve(path.size() / downsample_ratio);
-  plan.poses.reserve(path.size() / downsample_ratio);
-
-  for (int i = path.size() - 1; i >= 0; --i) {
-    if (_smoother && i % downsample_ratio != 0) {
-      continue;
-    }
-    unsigned int index_x, index_y;
-    double world_x, world_y;
-    _costmap->indexToCells(path[i], index_x, index_y);
-    _costmap->mapToWorld(index_x, index_y, world_x, world_y);
-    path_world.push_back(Eigen::Vector2d(world_x, world_y));
-    pose.pose.position.x = world_x;
-    pose.pose.position.y = world_y;
-    plan.poses.push_back(pose);
-  }
+//  IndexPath path;
+//  int num_iterations = 0;
+//  std::string error;
+//  try {
+//    if (!_a_star->createPath(
+//      path, num_iterations, _tolerance / static_cast<float>(_costmap->getResolution())))
+//    {
+//      if (num_iterations < _a_star->getMaxIterations()) {
+//        error = std::string("no valid path found.");
+//      } else {
+//        error = std::string("exceeded maximum iterations.");
+//      }
+//    }
+//  } catch (const std::runtime_error & e) {
+//    error = "invalid use: ";
+//    error += e.what();
+//  }
+//
+//  if (!error.empty()) {
+//    RCLCPP_WARN(
+//      _node->get_logger(),
+//      "%s: failed to create plan, %s.",
+//      _name.c_str(), error.c_str());
+//    return plan;
+//  }
+//
+//  // Convert to world coordinates and downsample path for smoothing if necesssary
+//  // We're going to downsample by 4x to give terms room to move.
+//  const int downsample_ratio = 4;
+//  std::vector<Eigen::Vector2d> path_world;
+//  path_world.reserve(path.size() / downsample_ratio);
+//  plan.poses.reserve(path.size() / downsample_ratio);
+//
+//  for (int i = path.size() - 1; i >= 0; --i) {
+//    if (_smoother && i % downsample_ratio != 0) {
+//      continue;
+//    }
+//    unsigned int index_x, index_y;
+//    double world_x, world_y;
+//    _costmap->indexToCells(path[i], index_x, index_y);
+//    _costmap->mapToWorld(index_x, index_y, world_x, world_y);
+//    path_world.push_back(Eigen::Vector2d(world_x, world_y));
+//    pose.pose.position.x = world_x;
+//    pose.pose.position.y = world_y;
+//    plan.poses.push_back(pose);
+//  }
 
   // Publish raw path for debug
   if (_node->count_subscribers(_raw_plan_publisher->get_topic_name()) > 0) {
     _raw_plan_publisher->publish(plan);
   }
 
-  // Smooth plan
-  if (_smoother && path_world.size() > 4) {
-    MinimalCostmap mcmap(char_costmap, _costmap->getSizeInCellsX(),
-      _costmap->getSizeInCellsY(), _costmap->getOriginX(), _costmap->getOriginY(),
-      _costmap->getResolution());
-    if (!_smoother->smooth(path_world, & mcmap, _smoother_params)) {
-      RCLCPP_WARN(
-        _node->get_logger(),
-        "%s: failed to smooth plan, Ceres could not find a usable solution to optimize.",
-        _name.c_str());
-      return plan;
-    }
-
-    removeHook(path_world);
-
-///////////////////////////////// DEBUG/////////////////////////////////
-    for (int i = 0; i != path_world.size(); i++) {
-      pose.pose.position.x = path_world[i][0];
-      pose.pose.position.y = path_world[i][1];
-      plan.poses[i] = pose;
-    }
-    smoother_debug1_pub_->publish(plan);
-///////////////////////////////// DEBUG/////////////////////////////////
-
-    // Upsample path
-    if (_upsampler) {
-      if(!_upsampler->upsample(path_world, _smoother_params, 2))  // TODO _sampling_ratio
-      {
-        RCLCPP_WARN(
-          _node->get_logger(),
-          "%s: failed to upsample plan, Ceres could not find a usable solution to optimize.",
-          _name.c_str());
-      } else {
-        plan.poses.resize(path_world.size());
-      }
-    }
-  } else {
-    return plan;
-  }
+//  // Smooth plan
+//  if (_smoother && path_world.size() > 4) {
+//    MinimalCostmap mcmap(char_costmap, _costmap->getSizeInCellsX(),
+//      _costmap->getSizeInCellsY(), _costmap->getOriginX(), _costmap->getOriginY(),
+//      _costmap->getResolution());
+//    if (!_smoother->smooth(path_world, & mcmap, _smoother_params)) {
+//      RCLCPP_WARN(
+//        _node->get_logger(),
+//        "%s: failed to smooth plan, Ceres could not find a usable solution to optimize.",
+//        _name.c_str());
+//      return plan;
+//    }
+//
+//    removeHook(path_world);
+//
+/////////////////////////////////// DEBUG/////////////////////////////////
+//    for (int i = 0; i != path_world.size(); i++) {
+//      pose.pose.position.x = path_world[i][0];
+//      pose.pose.position.y = path_world[i][1];
+//      plan.poses[i] = pose;
+//    }
+//    smoother_debug1_pub_->publish(plan);
+/////////////////////////////////// DEBUG/////////////////////////////////
+//
+//    // Upsample path
+//    if (_upsampler) {
+//      if(!_upsampler->upsample(path_world, _smoother_params, 2))  // TODO _sampling_ratio
+//      {
+//        RCLCPP_WARN(
+//          _node->get_logger(),
+//          "%s: failed to upsample plan, Ceres could not find a usable solution to optimize.",
+//          _name.c_str());
+//      } else {
+//        plan.poses.resize(path_world.size());
+//      }
+//    }
+//  } else {
+//    return plan;
+//  }
 
 ///////////////////////////////// DEBUG/////////////////////////////////
 
@@ -425,18 +429,18 @@ nav_msgs::msg::Path SmacPlanner::createPlan(
   // smoother_debug3_pub_->publish(plan);
 //////////////////////////////// DEBUG/////////////////////////////////
 
-  for (int i = 0; i != plan.poses.size(); i++) {
-    pose.pose.position.x = path_world[i][0];
-    pose.pose.position.y = path_world[i][1];
-    plan.poses[i] = pose;
-  }
-
-#ifdef BENCHMARK_TESTING
-  steady_clock::time_point b = steady_clock::now();
-  duration<double> time_span = duration_cast<duration<double> >(b-a);
-  cout << "It took " << time_span.count() * 1000 <<
-    " milliseconds with " << num_iterations << " iterations." <<  endl;
-#endif
+//  for (int i = 0; i != plan.poses.size(); i++) {
+//    pose.pose.position.x = path_world[i][0];
+//    pose.pose.position.y = path_world[i][1];
+//    plan.poses[i] = pose;
+//  }
+//
+//#ifdef BENCHMARK_TESTING
+//  steady_clock::time_point b = steady_clock::now();
+//  duration<double> time_span = duration_cast<duration<double> >(b-a);
+//  cout << "It took " << time_span.count() * 1000 <<
+//    " milliseconds with " << num_iterations << " iterations." <<  endl;
+//#endif
 
   return plan;
 }

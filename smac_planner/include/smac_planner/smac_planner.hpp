@@ -22,6 +22,7 @@
 #include "smac_planner/a_star.hpp"
 #include "smac_planner/smoother.hpp"
 #include "smac_planner/upsampler.hpp"
+#include "smac_planner/ompl_planner.hpp"
 #include "nav2_core/global_planner.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
@@ -103,6 +104,8 @@ protected:
   SmootherParams _smoother_params;
   OptimizerParams _optimizer_params;
   int _upsampling_ratio;
+
+  OMPLPlanner _ompl_planner;
 };
 
 }  // namespace smac_planner

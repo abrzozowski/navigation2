@@ -22,11 +22,14 @@ find_package(pluginlib REQUIRED)
 find_package(Ceres REQUIRED COMPONENTS SuiteSparse)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(ompl REQUIRED)
 
 include_directories(
   include
   ${CERES_INCLUDES}
 )
+
+include_directories(SYSTEM ${OMPL_INCLUDE_DIRS})
 
 set(library_name smac_planner)
 set(plugin_xml global_planner_plugin.xml)
@@ -52,6 +55,8 @@ set(dependencies
 add_library(${library_name} SHARED
   src/a_star.cpp
   src/smac_planner.cpp
+  src/footprint_collision_checker.cpp
+  src/ompl_planner.cpp
 )
 
 ament_target_dependencies(${library_name}
@@ -59,7 +64,7 @@ ament_target_dependencies(${library_name}
 )
 
 target_include_directories(${library_name} PUBLIC ${Eigen3_INCLUDE_DIRS})
-target_link_libraries(${library_name} ${CERES_LIBRARIES})
+target_link_libraries(${library_name} ${CERES_LIBRARIES} ${OMPL_LIBRARIES})
 
 target_compile_definitions(${library_name} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 
